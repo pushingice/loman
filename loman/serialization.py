@@ -1,6 +1,8 @@
 import json
+import os
 import uuid
 import zipfile
+import tempfile
 
 
 class StringSerializer(object):
@@ -18,11 +20,19 @@ class StringSerializer(object):
     def can_serialize(self, value):
         return isinstance(value, str)
 
-    def serialize(self, obj):
-        return obj.encode('utf-8')
+    def serialize(self, obj, get_file):
+        if len(obj) > 10:
+            f = get_file()
+            f.write(obj.encode('utf-8'))
+        else:
+            return obj
 
-    def deserialize(self, b):
-        return b.decode('utf-8')
+    def deserialize(self, b, f):
+        print("f=", f)
+        if f is None:
+            return b
+        else:
+            return f.read().decode('utf-8')
 
 
 class SerializerRegistry(object):
@@ -55,11 +65,31 @@ class Serialization(object):
 
     def serialize_item(self, key, value):
         serializer = self.serializer_registry.get_serializer_for_value(value)
-        filename, _ = self.catalog.get(key, (None, None))
+        filename, _, _ = self.catalog.get(key, (None, None, None))
         if filename is None:
             filename = uuid.uuid4().hex
-        self.zipfile.writestr(filename, serializer.serialize(value))
-        self.catalog[key] = (filename, serializer.name)
+
+        l = []
+        try:
+            def get_file():
+                f = tempfile.NamedTemporaryFile(delete=False)
+                l.append(f)
+                return f
+
+            write_str = serializer.serialize(value, get_file)
+
+            if len(l) == 0:
+                self.catalog[key] = (None, serializer.name, write_str)
+            else:
+                f = l[0]
+                f.close()
+                self.zipfile.write(f.name, filename)
+                self.catalog[key] = (filename, serializer.name, write_str)
+        finally:
+            if len(l) == 1:
+                f = l[0]
+                f.close()
+                os.remove(f.name)
 
     def serialize_dict(self, d):
         for k, v in d.items():
@@ -69,10 +99,14 @@ class Serialization(object):
         return self.catalog.keys()
 
     def deserialize_item(self, key):
-        filename, typename = self.catalog[key]
+        filename, typename, str_rep = self.catalog[key]
+        try:
+            info = self.zipfile.getinfo(filename)
+            f = self.zipfile.open(filename, 'r')
+        except KeyError:
+            f = None
         serializer = self.serializer_registry.get_serializer_by_name(typename)
-        with self.zipfile.open(filename, 'r') as f:
-            return serializer.deserialize(f.read())
+        return serializer.deserialize(str_rep, f)
 
     def deserialize_all(self):
         d = {}

@@ -8,7 +8,7 @@ def test_string_roundtrip():
 
     buf = io.BytesIO()
 
-    d = {'x': 'foo'}
+    d = {'x': 'foo', 'y': 'This is a longer string to trigger writing a file'}
     ser = Serialization(buf, 'w', reg)
     ser.serialize_dict(d)
     ser.close()
