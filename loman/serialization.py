@@ -50,8 +50,7 @@ class Serialization(object):
         filename, _ = self.catalog.get(key, (None, None))
         if filename is None:
             filename = uuid.uuid4().hex
-        with self.zipfile.open(filename, 'w') as f:
-            f.write(serializer.serialize(value))
+        self.zipfile.writestr(filename, serializer.serialize(value))
         self.catalog[key] = (filename, serializer.name)
 
     def serialize_dict(self, d):
@@ -75,6 +74,6 @@ class Serialization(object):
 
     def close(self):
         if self.mode == 'w':
-            with self.zipfile.open("catalog", 'w') as f:
-                f.write(json.dumps(self.catalog).encode('utf-8'))
+            catalog_data = json.dumps(self.catalog).encode('utf-8')
+            self.zipfile.writestr('catalog', catalog_data)
         self.zipfile.close()
