@@ -46,7 +46,7 @@ class Serialization(object):
     def __init__(self, file, mode, serializer_registry):
         assert mode in ['r', 'w']
         self.mode = mode
-        self.zipfile = zipfile.ZipFile(file, mode)
+        self.zipfile = zipfile.ZipFile(file, mode, zipfile.ZIP_DEFLATED)
         self.serializer_registry = serializer_registry
         self.catalog = {}
         if mode == 'r':
