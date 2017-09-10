@@ -25,17 +25,10 @@ class StringSerializer(object):
         return b.decode('utf-8')
 
 
-class Serialization(object):
-    def __init__(self, file, mode):
-        assert mode in ['r', 'w']
-        self.mode = mode
-        self.zipfile = zipfile.ZipFile(file, mode)
+class SerializerRegistry(object):
+    def __init__(self):
         self.serializers_by_name = {}
         self.serializers_by_class = {}
-        self.catalog = {}
-        if mode == 'r':
-            with self.zipfile.open("catalog", 'r') as f:
-                self.catalog = json.loads(f.read().decode('utf-8'))
 
     def register_serializer(self, serializer):
         for cls in serializer.supported_classes:
@@ -45,8 +38,23 @@ class Serialization(object):
     def get_serializer_for_value(self, value):
         return self.serializers_by_class[value.__class__]
 
+    def get_serializer_by_name(self, name):
+        return self.serializers_by_name[name]
+
+
+class Serialization(object):
+    def __init__(self, file, mode, serializer_registry):
+        assert mode in ['r', 'w']
+        self.mode = mode
+        self.zipfile = zipfile.ZipFile(file, mode)
+        self.serializer_registry = serializer_registry
+        self.catalog = {}
+        if mode == 'r':
+            with self.zipfile.open("catalog", 'r') as f:
+                self.catalog = json.loads(f.read().decode('utf-8'))
+
     def serialize_item(self, key, value):
-        serializer = self.get_serializer_for_value(value)
+        serializer = self.serializer_registry.get_serializer_for_value(value)
         filename, _ = self.catalog.get(key, (None, None))
         if filename is None:
             filename = uuid.uuid4().hex
@@ -62,7 +70,7 @@ class Serialization(object):
 
     def deserialize_item(self, key):
         filename, typename = self.catalog[key]
-        serializer = self.serializers_by_name[typename]
+        serializer = self.serializer_registry.get_serializer_by_name(typename)
         with self.zipfile.open(filename, 'r') as f:
             return serializer.deserialize(f.read())
 
