@@ -9,7 +9,6 @@ from enum import Enum
 
 import six
 
-
 SERIALIZATION_TYPE_LITERAL = 0
 SERIALIZATION_TYPE_STRING = 1
 SERIALIZATION_TYPE_FILE = 2
@@ -17,6 +16,10 @@ SERIALIZATION_TYPE_FILE = 2
 
 class SerializerABC(object):
     __metaclass__ = abc.ABCMeta
+
+    @abc.abstractmethod
+    def __init__(self, registry):
+        pass
 
     @abc.abstractmethod
     def name(self):
@@ -40,8 +43,8 @@ class SerializerABC(object):
 
 
 class StringSerializer(SerializerABC):
-    def __init__(self):
-        pass
+    def __init__(self, registry):
+        super().__init__(registry)
 
     @property
     def name(self):
@@ -74,6 +77,7 @@ class StringSerializer(SerializerABC):
 
 class ListSerializer(SerializerABC):
     def __init__(self, registry):
+        super().__init__(registry)
         self.registry = registry
 
     @property
@@ -114,6 +118,9 @@ class ListSerializer(SerializerABC):
         return l
 
 
+serializers = [StringSerializer, ListSerializer]
+
+
 class SerializerRegistry(object):
     def __init__(self):
         self.serializers_by_name = {}
@@ -130,6 +137,15 @@ class SerializerRegistry(object):
     def get_serializer_by_name(self, name):
         return self.serializers_by_name[name]
 
+
+def create_default_registry():
+    reg = SerializerRegistry()
+    for serializer in serializers:
+        reg.register_serializer(serializer(reg))
+    return reg
+
+
+default_registry = create_default_registry()
 
 CatalogEntry = namedtuple('CatalogEntry', ['typename', 'data'])
 FileWriteObject = namedtuple('FileWriteObject', ['filename', 'file'])
