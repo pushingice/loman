@@ -5,8 +5,6 @@ import zipfile
 import tempfile
 import abc
 from collections import namedtuple
-from enum import Enum
-
 import six
 
 SERIALIZATION_TYPE_LITERAL = 0
@@ -42,9 +40,75 @@ class SerializerABC(object):
         pass
 
 
+class BoolSerializer(SerializerABC):
+    def __init__(self, registry):
+        super(BoolSerializer, self).__init__(registry)
+
+    @property
+    def name(self):
+        return "bool"
+
+    @property
+    def supported_classes(self):
+        return [bool]
+
+    def can_serialize(self, value):
+        return isinstance(value, bool)
+
+    def serialize(self, obj, cat):
+        return obj
+
+    def deserialize(self, cat_data, cat):
+        return cat_data
+
+
+class IntSerializer(SerializerABC):
+    def __init__(self, registry):
+        super(IntSerializer, self).__init__(registry)
+
+    @property
+    def name(self):
+        return "int"
+
+    @property
+    def supported_classes(self):
+        return [int]
+
+    def can_serialize(self, value):
+        return isinstance(value, int)
+
+    def serialize(self, obj, cat):
+        return obj
+
+    def deserialize(self, cat_data, cat):
+        return cat_data
+
+
+class FloatSerializer(SerializerABC):
+    def __init__(self, registry):
+        super(FloatSerializer, self).__init__(registry)
+
+    @property
+    def name(self):
+        return "float"
+
+    @property
+    def supported_classes(self):
+        return [float]
+
+    def can_serialize(self, value):
+        return isinstance(value, float)
+
+    def serialize(self, obj, cat):
+        return obj
+
+    def deserialize(self, cat_data, cat):
+        return cat_data
+
+
 class StringSerializer(SerializerABC):
     def __init__(self, registry):
-        super().__init__(registry)
+        super(StringSerializer, self).__init__(registry)
 
     @property
     def name(self):
@@ -77,7 +141,7 @@ class StringSerializer(SerializerABC):
 
 class ListSerializer(SerializerABC):
     def __init__(self, registry):
-        super().__init__(registry)
+        super(ListSerializer, self).__init__(registry)
         self.registry = registry
 
     @property
@@ -113,12 +177,59 @@ class ListSerializer(SerializerABC):
             ser_list_json = f.read().decode('utf-8')
         elif ser_type == SERIALIZATION_TYPE_STRING:
             ser_list_json = cat.get_string(data)
+        else:
+            raise ValueError()
         ser_list = json.loads(ser_list_json)
         l = [cat.read_catalog_entry(CatalogEntry(*x)) for x in ser_list]
         return l
 
 
-serializers = [StringSerializer, ListSerializer]
+class DictSerializer(SerializerABC):
+    def __init__(self, registry):
+        super(DictSerializer, self).__init__(registry)
+        self.registry = registry
+
+    @property
+    def name(self):
+        return "dict"
+
+    @property
+    def supported_classes(self):
+        return [dict]
+
+    def can_serialize(self, value):
+        return isinstance(value, dict)
+
+    def serialize(self, obj, cat):
+        ser_dict = {}
+        for k, v in six.iteritems(obj):
+            cat_entry = cat.create_catalog_entry(v)
+            ser_dict[k] = cat_entry
+        ser_dict_json = json.dumps(ser_dict)
+        if len(obj) < 50:
+            string_key = cat.add_string(ser_dict_json)
+            return SERIALIZATION_TYPE_STRING, string_key
+        else:
+            fwo = cat.open_file_write()
+            fwo.file.write(ser_dict_json.encode('utf-8'))
+            fwo.file.close()
+            return SERIALIZATION_TYPE_FILE, fwo.filename
+
+    def deserialize(self, cat_data, cat):
+        ser_type, data = cat_data
+        if ser_type == SERIALIZATION_TYPE_FILE:
+            f = cat.open_file_read(data)
+            ser_dict_json = f.read().decode('utf-8')
+        elif ser_type == SERIALIZATION_TYPE_STRING:
+            ser_dict_json = cat.get_string(data)
+        else:
+            raise ValueError()
+        ser_dict = json.loads(ser_dict_json)
+        l = {k: cat.read_catalog_entry(CatalogEntry(*v)) for k, v in six.iteritems(ser_dict)}
+        return l
+
+
+serializers = [BoolSerializer, IntSerializer, FloatSerializer, StringSerializer, ListSerializer, DictSerializer]
 
 
 class SerializerRegistry(object):

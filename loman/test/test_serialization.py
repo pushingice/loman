@@ -15,6 +15,32 @@ def round_trip(obj):
     return d2
 
 
+def test_bool_round_trip():
+    d = False
+    d2 = round_trip(d)
+    assert d2 == d
+
+    d = True
+    d2 = round_trip(d)
+    assert d2 == d
+
+
+def test_int_round_trip():
+    d = 42
+    d2 = round_trip(d)
+    assert d2 == d
+
+
+def test_float_round_trip():
+    d = 42.
+    d2 = round_trip(d)
+    assert d2 == d
+
+    d = 3.141592653
+    d2 = round_trip(d)
+    assert d2 == d
+
+
 def test_string_round_trip():
     d = 'foo'
     d2 = round_trip(d)
@@ -29,3 +55,12 @@ def test_list_round_trip():
     l = ['abc', 'This is a longer string to trigger writing a file']
     l2 = round_trip(l)
     assert l2 == l
+
+
+def test_dict_round_trip():
+    d = {
+        'x': 'abc',
+        'y': 'This is a longer string to trigger writing a file'
+    }
+    d2 = round_trip(d)
+    assert d2 == d
