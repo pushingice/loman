@@ -1,5 +1,5 @@
 import io
-from loman.serialization import Serialization, SerializerRegistry, StringSerializer
+from loman.serialization import SerializationCatalog, SerializerRegistry, StringSerializer
 
 
 def test_string_roundtrip():
@@ -9,11 +9,11 @@ def test_string_roundtrip():
     buf = io.BytesIO()
 
     d = {'x': 'foo', 'y': 'This is a longer string to trigger writing a file'}
-    ser = Serialization(buf, 'w', reg)
+    ser = SerializationCatalog(buf, 'w', reg)
     ser.serialize_dict(d)
     ser.close()
 
-    ser = Serialization(buf, 'r', reg)
+    ser = SerializationCatalog(buf, 'r', reg)
     d2 = ser.deserialize_all()
     ser.close()
     assert d2 == d
