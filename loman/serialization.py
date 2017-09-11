@@ -5,8 +5,14 @@ import zipfile
 import tempfile
 import abc
 from collections import namedtuple
+from enum import Enum
 
 import six
+
+
+SERIALIZATION_TYPE_LITERAL = 0
+SERIALIZATION_TYPE_STRING = 1
+SERIALIZATION_TYPE_FILE = 2
 
 
 class SerializerABC(object):
@@ -53,17 +59,59 @@ class StringSerializer(SerializerABC):
             fwo = cat.open_file_write()
             fwo.file.write(obj.encode('utf-8'))
             fwo.file.close()
-            return 'f', fwo.filename
+            return SERIALIZATION_TYPE_FILE, fwo.filename
         else:
-            return 'l', obj
+            return SERIALIZATION_TYPE_LITERAL, obj
 
     def deserialize(self, cat_data, cat):
         ser_type, data = cat_data
-        if ser_type == 'f':
+        if ser_type == SERIALIZATION_TYPE_FILE:
             f = cat.open_file_read(data)
             return f.read().decode('utf-8')
-        elif ser_type == 'l':
+        elif ser_type == SERIALIZATION_TYPE_LITERAL:
             return data
+
+
+class ListSerializer(SerializerABC):
+    def __init__(self, registry):
+        self.registry = registry
+
+    @property
+    def name(self):
+        return "list"
+
+    @property
+    def supported_classes(self):
+        return [list]
+
+    def can_serialize(self, value):
+        return isinstance(value, list)
+
+    def serialize(self, obj, cat):
+        ser_list = []
+        for x in obj:
+            cat_entry = cat.create_catalog_entry(x)
+            ser_list.append(cat_entry)
+        ser_list_json = json.dumps(ser_list)
+        if len(obj) < 50:
+            string_key = cat.add_string(ser_list_json)
+            return SERIALIZATION_TYPE_STRING, string_key
+        else:
+            fwo = cat.open_file_write()
+            fwo.file.write(ser_list_json.encode('utf-8'))
+            fwo.file.close()
+            return SERIALIZATION_TYPE_FILE, fwo.filename
+
+    def deserialize(self, cat_data, cat):
+        ser_type, data = cat_data
+        if ser_type == SERIALIZATION_TYPE_FILE:
+            f = cat.open_file_read(data)
+            ser_list_json = f.read().decode('utf-8')
+        elif ser_type == SERIALIZATION_TYPE_STRING:
+            ser_list_json = cat.get_string(data)
+        ser_list = json.loads(ser_list_json)
+        l = [cat.read_catalog_entry(CatalogEntry(*x)) for x in ser_list]
+        return l
 
 
 class SerializerRegistry(object):
@@ -83,10 +131,11 @@ class SerializerRegistry(object):
         return self.serializers_by_name[name]
 
 
-class SerializationCatalog(object):
-    FileWriteObject = namedtuple('FileWriteObject', ['filename', 'file'])
-    CatalogEntry = namedtuple('CatalogEntry', ['typename', 'data'])
+CatalogEntry = namedtuple('CatalogEntry', ['typename', 'data'])
+FileWriteObject = namedtuple('FileWriteObject', ['filename', 'file'])
 
+
+class SerializationCatalog(object):
     def __init__(self, file, mode, serializer_registry):
         assert mode in ['r', 'w']
         self.mode = mode
@@ -96,7 +145,7 @@ class SerializationCatalog(object):
         if mode == 'r':
             with self.zipfile.open("catalog", 'r') as f:
                 string_dict = json.loads(f.read().decode('utf-8'))
-                self.catalog = {k: SerializationCatalog.CatalogEntry(*v) for k, v in six.iteritems(string_dict)}
+                self.catalog = {k: CatalogEntry(*v) for k, v in six.iteritems(string_dict)}
         self.string_table = {}
         if mode == 'r':
             with self.zipfile.open("string_table", 'r') as f:
@@ -104,10 +153,13 @@ class SerializationCatalog(object):
         self.read_files = []
         self.write_files = []
 
-    def serialize_item(self, key, value):
+    def create_catalog_entry(self, value):
         serializer = self.serializer_registry.get_serializer_for_value(value)
         catalog_data = serializer.serialize(value, self)
-        self.catalog[key] = SerializationCatalog.CatalogEntry(serializer.name, catalog_data)
+        return CatalogEntry(serializer.name, catalog_data)
+
+    def serialize_item(self, key, value):
+        self.catalog[key] = self.create_catalog_entry(value)
         for f in self.read_files:
             f.close()
         self.read_files = []
@@ -124,10 +176,13 @@ class SerializationCatalog(object):
     def get_keys(self):
         return self.catalog.keys()
 
-    def deserialize_item(self, key):
-        catalog_entry = self.catalog[key]
+    def read_catalog_entry(self, catalog_entry):
         serializer = self.serializer_registry.get_serializer_by_name(catalog_entry.typename)
         return serializer.deserialize(catalog_entry.data, self)
+
+    def deserialize_item(self, key):
+        catalog_entry = self.catalog[key]
+        return self.read_catalog_entry(catalog_entry)
 
     def deserialize_all(self):
         d = {}
@@ -143,7 +198,7 @@ class SerializationCatalog(object):
     def open_file_write(self):
         filename = uuid.uuid4().hex
         f = tempfile.NamedTemporaryFile(delete=False)
-        fwo = SerializationCatalog.FileWriteObject(filename, f)
+        fwo = FileWriteObject(filename, f)
         self.write_files.append(fwo)
         return fwo
 
@@ -152,11 +207,14 @@ class SerializationCatalog(object):
         self.string_table[key] = value
         return key
 
+    def get_string(self, key):
+        return self.string_table[key]
+
     def close(self):
         if self.mode == 'w':
             catalog_data = json.dumps(self.catalog).encode('utf-8')
             self.zipfile.writestr('catalog', catalog_data)
         if self.mode == 'w':
-            string_table_data = json.dumps(self.catalog).encode('utf-8')
+            string_table_data = json.dumps(self.string_table).encode('utf-8')
             self.zipfile.writestr('string_table', string_table_data)
         self.zipfile.close()
