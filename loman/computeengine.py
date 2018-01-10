@@ -15,6 +15,7 @@ import pandas as pd
 import six
 import types
 
+from loman.function import get_function_specifier
 from .consts import NodeAttributes, EdgeAttributes, SystemTags, States
 from .graph_utils import contract_node
 from .visualization import create_viz_dag, to_pydot
@@ -182,7 +183,7 @@ class Computation(object):
         node[NodeAttributes.EXECUTOR] = executor
 
         if func:
-            node[NodeAttributes.FUNC] = func
+            func_specifier = node[NodeAttributes.FUNC] = get_function_specifier(func)
             args_count = 0
             if args:
                 args_count = len(args)
@@ -195,7 +196,7 @@ class Computation(object):
                             self.dag.add_node(input_vertex_name, **{NodeAttributes.STATE: States.PLACEHOLDER})
                         self.dag.add_edge(input_vertex_name, name, **{EdgeAttributes.PARAM: (_ParameterType.ARG, i)})
             if inspect:
-                signature = get_signature(func)
+                signature = func_specifier.signature
                 param_names = set()
                 if not signature.has_var_args:
                     param_names.update(signature.kwd_params[args_count:])
@@ -491,7 +492,8 @@ class Computation(object):
 
     def _get_func_args_kwds(self, name):
         node0 = self.dag.node[name]
-        f = node0[NodeAttributes.FUNC]
+        func_specifier = node0[NodeAttributes.FUNC]
+        func = func_specifier.func
         executor_name = node0.get(NodeAttributes.EXECUTOR)
         args, kwds = [], {}
         for param in self._get_parameter_data(name):
@@ -504,7 +506,7 @@ class Computation(object):
                 kwds[param.name] = param.value
             else:
                 raise Exception("Unexpected param type: {}".format(param.type))
-        return f, executor_name, args, kwds
+        return func, executor_name, args, kwds
 
     def _eval_node(self, name, f, args, kwds, raise_exceptions):
         exc, tb = None, None
